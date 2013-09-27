@@ -40,7 +40,6 @@ extern NSString * const AMImageCacheDataBaseException;
 - (void)executeRequest:(AMImageRequest*)request completion:(void (^)(UIImage *image))completionBlock;
 - (UIImage*)executeRequestInDynamicCache:(AMImageRequest*)request;
 
-- (void)storeImage:(UIImage*)image;
 - (void)storeImage:(UIImage*)image forIdentifier:(NSString*)identifier;
 - (void)storeImage:(UIImage*)image forIdentifier:(NSString*)identifier isOriginal:(BOOL)isOriginal;
 - (void)storeImage:(UIImage*)image forRequest:(AMImageRequest*)request;

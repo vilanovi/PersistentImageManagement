@@ -170,11 +170,6 @@ NSString * const AMImageCacheDataBaseException = @"AMImageCacheDataBaseException
     });
 }
 
-- (void)storeImage:(UIImage*)image
-{
-    [self storeImage:image forIdentifier:nil];
-}
-
 - (void)storeImage:(UIImage*)image forIdentifier:(NSString*)identifier
 {
     [self storeImage:image forIdentifier:identifier isOriginal:NO];
