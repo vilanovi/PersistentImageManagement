@@ -147,6 +147,7 @@ NSString * const AMImageCacheDataBaseException = @"AMImageCacheDataBaseException
     if (key != NSNotFound)
     {
         UIImage *image = [self _imageForKey:key];
+        
         [self _updateAccessForImageWithKey:key];
         
         [_cacheByRequest setObject:image forKey:request];
@@ -177,77 +178,70 @@ NSString * const AMImageCacheDataBaseException = @"AMImageCacheDataBaseException
 
 - (void)storeImage:(UIImage*)image forIdentifier:(NSString*)identifier isOriginal:(BOOL)isOriginal
 {
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        
-        [_dbQueue inTransaction:^(FMDatabase *db, BOOL *rollback) {
-            @try
-            {
+    [_dbQueue inTransaction:^(FMDatabase *db, BOOL *rollback) {
+        @try
+        {
             if(![db executeUpdate:@"INSERT INTO Images (identifier, creationDate, original, width, height, scale) values (?, ?, ?, ?, ?, ?)",
-             identifier,
-             @([[NSDate date] timeIntervalSince1970]),
-             @(isOriginal),
-             @(image.size.width),
-             @(image.size.height),
-             @(image.scale)
-             ])
+                 identifier,
+                 @([[NSDate date] timeIntervalSince1970]),
+                 @(isOriginal),
+                 @(image.size.width),
+                 @(image.size.height),
+                 @(image.scale)
+                 ])
                 @throw UpdateException;
             
             sqlite_int64 key = db.lastInsertRowId;
             
             if (![db executeUpdate:@"INSERT INTO Data (key, data , scale) values (?, ?, ?)",
-             @(key),
-             UIImagePNGRepresentation(image),
-             @(image.scale)
-             ])
+                  @(key),
+                  UIImagePNGRepresentation(image),
+                  @(image.scale)
+                  ])
                 @throw UpdateException;
-            }
-            @catch (NSException *exception)
-            {
-                if ([exception.name isEqualToString:AMImageCacheDataBaseException])
-                    *rollback = YES;
-                else
-                    @throw exception;
-            }
-        }];
-    });
+        }
+        @catch (NSException *exception)
+        {
+            if ([exception.name isEqualToString:AMImageCacheDataBaseException])
+                *rollback = YES;
+            else
+                @throw exception;
+        }
+    }];
 }
 
 - (void)storeImage:(UIImage*)image forRequest:(AMImageRequest*)request
 {
     [_cacheByRequest setObject:image forKey:request];
+    
     [self storeImage:image forIdentifier:request.identifier isOriginal:request.original];
 }
 
 - (void)cleanCacheUsingAccessDate:(NSTimeInterval)accessDate completion:(void (^)())completionBlock
 {
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        
-        [_dbQueue inTransaction:^(FMDatabase *db, BOOL *rollback) {
-            @try
-            {
-                NSString *query1 = [NSString stringWithFormat:@"DELETE FROM Data WHERE key IN (SELECT Images.key FROM Images WHERE Images.accessDate < %f)", accessDate];
-                NSString *query2 = [NSString stringWithFormat:@"DELETE FROM Images WHERE accessDate < %f", accessDate];
-                
-                if(![db executeUpdate:query1])
-                    @throw UpdateException;
-                
-                if (![db executeUpdate:query2])
-                    @throw UpdateException;
-            }
-            @catch (NSException *exception)
-            {
-                if ([exception.name isEqualToString:AMImageCacheDataBaseException])
-                    *rollback = YES;
-                else
-                    @throw exception;
-            }
-        }];
-        
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (completionBlock)
-                completionBlock();
-        });
-    });
+    [_dbQueue inTransaction:^(FMDatabase *db, BOOL *rollback) {
+        @try
+        {
+            NSString *query1 = [NSString stringWithFormat:@"DELETE FROM Data WHERE key IN (SELECT Images.key FROM Images WHERE Images.accessDate < %f)", accessDate];
+            NSString *query2 = [NSString stringWithFormat:@"DELETE FROM Images WHERE accessDate < %f", accessDate];
+            
+            if(![db executeUpdate:query1])
+                @throw UpdateException;
+            
+            if (![db executeUpdate:query2])
+                @throw UpdateException;
+        }
+        @catch (NSException *exception)
+        {
+            if ([exception.name isEqualToString:AMImageCacheDataBaseException])
+                *rollback = YES;
+            else
+                @throw exception;
+        }
+    }];
+    
+    if (completionBlock)
+        completionBlock();
 }
 
 #pragma mark Private Methods
@@ -298,7 +292,9 @@ NSString * const AMImageCacheDataBaseException = @"AMImageCacheDataBaseException
     __block UIImage *image = [_cacheByKey objectForKey:@(key)];
     
     if (image)
+    {
         return image;
+    }
     
     [_dbQueue inDatabase:^(FMDatabase *db) {
         FMResultSet *resultSet = [db executeQueryWithFormat:@"SELECT data, scale FROM Data WHERE Data.key = %d", key];
@@ -316,7 +312,7 @@ NSString * const AMImageCacheDataBaseException = @"AMImageCacheDataBaseException
     
     if (image)
         [_cacheByKey setObject:image forKey:@(key)];
-    
+        
     return image;
 }
 

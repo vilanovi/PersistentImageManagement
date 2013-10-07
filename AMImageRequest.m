@@ -105,6 +105,11 @@
     return NO;
 }
 
+- (NSString*)description
+{
+    return [NSString stringWithFormat:@"%@: [identifier:%@] [size:%@] [scale:%f] [sizeOption:%d] [offsetSize:%@] [similarRatio:%f] [restrictOptions:%d] [original:%@]", [super description], _identifier, NSStringFromCGSize(_size), _scale, _sizeOption, NSStringFromCGSize(_offsetSize), _similarRatio, _restrictOptions, (_original?@"YES":@"NO")];
+}
+
 #pragma mark Properties
 
 - (void)setSize:(CGSize)size

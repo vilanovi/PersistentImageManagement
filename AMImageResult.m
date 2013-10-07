@@ -26,4 +26,9 @@
 
 @implementation AMImageResult
 
+- (NSString*)description
+{
+    return [NSString stringWithFormat:@"%@: [key:%d] [identifier:%@] [creationDate:%f] [accessDate:%f] [size:%@] [scale:%f] [original:%@]", [super description], _key, _identifier, _creationDate, _accessDate, NSStringFromCGSize(_size), _scale, (_original?@"YES":@"NO")];
+}
+
 @end
