@@ -31,19 +31,16 @@ extern NSString * const AMImageCacheDataBaseException;
 @interface AMImageCache : NSObject
 
 + (AMImageCache*)cacheAtURL:(NSURL*)url;
-
 - (id)initWithURL:(NSURL *)url;
-
 @property (nonatomic, strong) NSURL *url;
 
-- (UIImage*)executeRequest:(AMImageRequest*)request;
-- (void)executeRequest:(AMImageRequest*)request completion:(void (^)(UIImage *image))completionBlock;
-- (UIImage*)executeRequestInDynamicCache:(AMImageRequest*)request;
+- (NSArray*)executeRequest:(AMImageRequest*)request;
+- (void)executeRequest:(AMImageRequest*)request completion:(void (^)(NSArray* images))completionBlock;
 
-- (void)storeImage:(UIImage*)image forIdentifier:(NSString*)identifier;
-- (void)storeImage:(UIImage*)image forIdentifier:(NSString*)identifier isOriginal:(BOOL)isOriginal;
-- (void)storeImage:(UIImage*)image forRequest:(AMImageRequest*)request;
+- (BOOL)storeImage:(UIImage*)image forIdentifier:(NSString*)identifier options:(NSString*)options;
+- (void)storeImage:(UIImage *)image forIdentifier:(NSString *)identifier options:(NSString *)options completionBlock:(void(^)(BOOL succeed))completionBlock;
 
-- (void)cleanCacheUsingAccessDate:(NSTimeInterval)accessDate completion:(void (^)())completionBlock;
+- (BOOL)executeDelete:(AMImageRequest*)request;
+- (void)executeDelete:(AMImageRequest*)request completion:(void (^)(BOOL succeed))completionBlock;
 
 @end

@@ -28,22 +28,28 @@
 
 + (AMImageRequest*)requestWithIdentifier:(NSString*)identifier
 {
-    return [[AMImageRequest alloc] initWithIdentifier:identifier];
+    AMImageRequest *request = [[AMImageRequest alloc] init];
+    request.identifier = identifier;
+    request.type = AMImageRequestTypeIdentifier;
+    return request;
 }
 
-- (id)initWithIdentifier:(NSString*)identifier;
++ (AMImageRequest*)requestWithIdentifier:(NSString*)identifier options:(NSString*)options
+{
+    AMImageRequest *request = [[AMImageRequest alloc] init];
+    request.identifier = identifier;
+    request.options = options;
+    request.type = AMImageRequestTypeIdentifierOptions;
+    return request;
+}
+
+- (id)init
 {
     self = [super init];
     if (self)
     {
-        _identifier = identifier;
-        _size = CGSizeZero;
-        _scale = [[UIScreen mainScreen] scale];
-        _sizeOption = AMImageRequestSizeOptionAnySize;
-        _offsetSize = CGSizeZero;
-        _similarRatio = 1.0f;
-        _restrictOptions = AMImageRequestOptionRestrictDisabled;
-        _original = NO;
+        _type = AMImageRequestTypeUndefined;
+        _scale = 1.0f;
     }
     return self;
 }
@@ -52,14 +58,13 @@
 {
     AMImageRequest *request = [[AMImageRequest allocWithZone:zone] init];
     
+    request->_type = _type;
     request->_identifier = [_identifier copy];
+    request->_options = [_options copy];
+    request->_accessDate = _accessDate;
+    request->_sizeOptions = _sizeOptions;
     request->_size = _size;
     request->_scale = _scale;
-    request->_sizeOption = _sizeOption;
-    request->_offsetSize = _offsetSize;
-    request->_similarRatio = _similarRatio;
-    request->_restrictOptions = _restrictOptions;
-    request->_original = _original;
     
     return request;
 }
@@ -68,17 +73,13 @@
 {    
     NSMutableString *string = [NSMutableString string];
     
-    if (_identifier)
-        [string appendFormat:@"<%@>",_identifier];
-    
+    [string appendFormat:@"<%d>",_type];
+    [string appendFormat:@"<%@>",_identifier];
+    [string appendFormat:@"<%@>",_options];
+    [string appendFormat:@"<%f>",_accessDate];
+    [string appendFormat:@"<%d>",_sizeOptions];
     [string appendFormat:@"<%f,%f>",_size.width, _size.height];
     [string appendFormat:@"<%f>",_scale];
-    [string appendFormat:@"<%d>",_sizeOption];
-    [string appendFormat:@"<%f,%f>",_offsetSize.width, _offsetSize.height];
-    [string appendFormat:@"<%f>",_similarRatio];
-    [string appendFormat:@"<%d>",_restrictOptions];
-    [string appendFormat:@"<%d>",_original];
-    
     
     return [string hash];
 }
@@ -89,14 +90,13 @@
     {
         AMImageRequest *request = object;
         
-        if ([request.identifier isEqual:_identifier] &&
+        if (request.type == _type &&
+            [request.identifier isEqual:_identifier] &&
+            [request.options isEqual:_options] &&
+            request.accessDate == _accessDate &&
+            request.sizeOptions == _sizeOptions &&
             CGSizeEqualToSize(request.size, _size) &&
-            request.scale == _scale &&
-            request.sizeOption == _sizeOption &&
-            CGSizeEqualToSize(request.offsetSize, _offsetSize) &&
-            request.similarRatio == _similarRatio &&
-            request.restrictOptions == _restrictOptions &&
-            request.original == _original)
+            request.scale == _scale)
         {
             return YES;
         }
@@ -107,32 +107,7 @@
 
 - (NSString*)description
 {
-    return [NSString stringWithFormat:@"%@: [identifier:%@] [size:%@] [scale:%f] [sizeOption:%d] [offsetSize:%@] [similarRatio:%f] [restrictOptions:%d] [original:%@]", [super description], _identifier, NSStringFromCGSize(_size), _scale, _sizeOption, NSStringFromCGSize(_offsetSize), _similarRatio, _restrictOptions, (_original?@"YES":@"NO")];
-}
-
-#pragma mark Properties
-
-- (void)setSize:(CGSize)size
-{
-    _size = size;
-    
-    if (CGSizeEqualToSize(size, CGSizeZero) && _sizeOption == AMImageRequestSizeOptionExactSize)
-        _sizeOption = AMImageRequestSizeOptionAnySize;
-    
-    else if (_sizeOption == AMImageRequestSizeOptionAnySize)
-        _sizeOption = AMImageRequestSizeOptionExactSize;
-}
-
-- (void)setOffsetSize:(CGSize)offsetSize
-{
-    _offsetSize = offsetSize;
-    _sizeOption = AMImageRequestSizeOptionInOffsetSize;
-}
-
-- (void)setSimilarRatio:(CGFloat)similarRatio
-{
-    _similarRatio = similarRatio;
-    _sizeOption = AMImageRequestSizeOptionSimilarSize;
+    return [NSString stringWithFormat:@"%@: [type:%d] [identifier:%@] [options:%@] [accessDate:%f] [sizeOptions:%d] [size:%@] [scale:%f]", [super description], _type, _identifier, _options, _accessDate, _sizeOptions, NSStringFromCGSize(_size), _scale];
 }
 
 @end

@@ -26,9 +26,24 @@
 
 @implementation AMImageResult
 
++ (AMImageResult*)resultWithDbID:(NSInteger)dbID
+{
+    return [[AMImageResult alloc] initWithDbID:dbID];
+}
+
+- (id)initWithDbID:(NSInteger)dbID
+{
+    self = [super init];
+    if (self)
+    {
+        _dbID = dbID;
+    }
+    return self;
+}
+
 - (NSString*)description
 {
-    return [NSString stringWithFormat:@"%@: [key:%d] [identifier:%@] [creationDate:%f] [accessDate:%f] [size:%@] [scale:%f] [original:%@]", [super description], _key, _identifier, _creationDate, _accessDate, NSStringFromCGSize(_size), _scale, (_original?@"YES":@"NO")];
+    return [NSString stringWithFormat:@"%@: [key:%d] [identifier:%@] [creationDate:%f] [accessDate:%f] [options:%@] [size:%@]", [super description], _dbID, _identifier, _creationDate, _accessDate, _options, NSStringFromCGSize(_size)];
 }
 
 @end

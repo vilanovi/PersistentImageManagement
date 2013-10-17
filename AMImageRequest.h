@@ -28,32 +28,31 @@ typedef enum __AMImageRequestSizeOptions
 {
     AMImageRequestSizeOptionAnySize         = 0,
     AMImageRequestSizeOptionExactSize       = 1 << 0,
-    AMImageRequestSizeOptionSimilarSize     = 1 << 1,
-    AMImageRequestSizeOptionInOffsetSize    = 1 << 2,
 } AMImageRequestSizeOptions;
 
-typedef enum  __AMImageRequestRestrictionOptions
+typedef enum  __AMImageRequestType
 {
-    AMImageRequestOptionRestrictDisabled,
-    AMImageRequestOptionRestrictSmaller,
-    AMImageRequestOptionRestrictBigger,
-} AMImageRequestRestrictionOptions;
+    AMImageRequestTypeUndefined = 0,
+    AMImageRequestTypeIdentifier,
+    AMImageRequestTypeIdentifierOptions,
+    AMImageRequestTypeOlderThanAccessDate,
+    AMImageRequestTypeNewerThanAccessDate,
+} AMImageRequestType;
 
 @interface AMImageRequest : NSObject <NSCopying>
 
 + (AMImageRequest*)requestWithIdentifier:(NSString*)identifier;
-- (id)initWithIdentifier:(NSString*)identifier;
++ (AMImageRequest*)requestWithIdentifier:(NSString*)identifier options:(NSString*)options;
+
+@property (nonatomic, assign) AMImageRequestType type;
 
 @property (nonatomic, strong) NSString *identifier;
-@property (nonatomic, assign) BOOL original;
+@property (nonatomic, strong) NSString *options;
+@property (nonatomic, assign) NSTimeInterval accessDate;
 
+@property (nonatomic, assign) AMImageRequestSizeOptions sizeOptions;
 @property (nonatomic, assign) CGSize size;
+
 @property (nonatomic, assign) CGFloat scale;
-
-@property (nonatomic, assign) AMImageRequestSizeOptions sizeOption;
-@property (nonatomic, assign) CGSize offsetSize;
-@property (nonatomic, assign) CGFloat similarRatio;
-
-@property (nonatomic, assign) AMImageRequestRestrictionOptions restrictOptions;
 
 @end

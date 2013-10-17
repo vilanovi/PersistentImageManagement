@@ -26,12 +26,15 @@
 
 @interface AMImageResult : NSObject
 
-@property(nonatomic, assign) NSInteger key;
++ (AMImageResult*)resultWithDbID:(NSInteger)dbID;
+- (id)initWithDbID:(NSInteger)dbID;
+
+@property(nonatomic, assign) NSInteger dbID;
 @property(nonatomic, strong) NSString* identifier;
 @property(nonatomic, assign) NSTimeInterval creationDate;
 @property(nonatomic, assign) NSTimeInterval accessDate;
+@property(nonatomic, strong) NSString* options;
 @property(nonatomic, assign) CGSize size;
-@property(nonatomic, assign) CGFloat scale;
-@property(nonatomic, assign) BOOL original;
+@property(nonatomic, strong) NSData *data;
 
 @end

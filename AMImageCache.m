@@ -37,11 +37,44 @@ NSString * const AMImageCacheDataBaseException = @"AMImageCacheDataBaseException
 
 #define UpdateException [NSException exceptionWithName:AMImageCacheDataBaseException reason:nil userInfo:nil]
 
+/*
+ * SQLite Table Overview:
+ *
+ * Table IMAGES:
+ * +-----------------------+-------+--------------+------------+---------+---------+---------+
+ * |          id           |  key  | creationDate | accessDate | options |  width  | height  |
+ * +-----------------------+-------+--------------+------------+---------+---------+---------+
+ * | INTEGER (PRIMARY KEY) | TEXT  | INTEGER      | INTEGER    | TEXT    | INTEGER | INTEGER |
+ * +-----------------------+-------+--------------+------------+---------+---------+---------+
+ *
+ * Table DATA:
+ * +--------------------------------------------------------+------+
+ * |                           id                           | data |
+ * +--------------------------------------------------------+------+
+ * | INTEGER (PRIMARY KEY FOREIGN KEY REFERENCES IMAGES.id) | BLOB |
+ * +--------------------------------------------------------+------+
+ */
+
+// Table name
+static NSString * const TABLE_IMAGES = @"Images";
+static NSString * const TABLE_DATA = @"Data";
+
+// Image Table Columns names
+static NSString * const IMAGES_COLUMN_ID = @"id";
+static NSString * const IMAGES_COLUMN_KEY = @"key";
+static NSString * const IMAGES_COLUMN_CREATION_DATE = @"creationDate";
+static NSString * const IMAGES_COLUMN_ACCESS_DATE = @"accessDate";
+static NSString * const IMAGES_COLUMN_OPTIONS = @"options";
+static NSString * const IMAGES_COLUMN_WIDTH = @"width";
+static NSString * const IMAGES_COLUMN_HEIGHT = @"height";
+
+// Data Table Columns names
+static NSString * const DATA_COLUMN_ID = @"id";
+static NSString * const DATA_COLUMN_DATA = @"data";
+
 @implementation AMImageCache
 {
     FMDatabaseQueue *_dbQueue;
-    NSCache *_cacheByKey;
-    NSCache *_cacheByRequest;
 }
 
 + (AMImageCache*)cacheAtURL:(NSURL*)url
@@ -75,9 +108,6 @@ NSString * const AMImageCacheDataBaseException = @"AMImageCacheDataBaseException
     {
         _url = url;
         
-        _cacheByKey = [[NSCache alloc] init];
-        _cacheByRequest = [[NSCache alloc] init];
-        
         if (url)
         {
             if ([[NSFileManager defaultManager] fileExistsAtPath:[url path]])
@@ -96,152 +126,69 @@ NSString * const AMImageCacheDataBaseException = @"AMImageCacheDataBaseException
 
 #pragma mark Public Methods
 
-- (UIImage*)executeRequestInDynamicCache:(AMImageRequest*)request
+- (NSArray*)executeRequest:(AMImageRequest*)request
 {
-    UIImage *image = [_cacheByRequest objectForKey:request];
-    if (image)
-        return image;
+    NSArray *results = [self _select:request];
     
-    return nil;
+    if (!results)
+        return nil;
+    
+    NSMutableArray *images = [NSMutableArray arrayWithCapacity:results.count];
+    
+    for (AMImageResult *result in results)
+    {
+        UIImage *image = [[UIImage alloc] initWithData:result.data scale:request.scale];
+        if (image)
+            [images addObject:image];
+    }
+    
+    return images;
 }
 
-- (UIImage*)executeRequest:(AMImageRequest*)request
-{
-    UIImage *image = [self executeRequestInDynamicCache:request];
-    if (image)
-        return image;
-    
-    NSInteger key = NSNotFound;
-    
-    NSArray *results = [self _resultsForImageRequest:request];
-    
-    if (request.sizeOption == AMImageRequestSizeOptionAnySize)
-    {
-        AMImageResult *result = [results lastObject];
-        if (result)
-            key = result.key;
-    }
-    else
-    {
-        // Searching the result with the minimal offset
-        CGFloat minDist = CGFLOAT_MAX;
-        
-        for (AMImageResult *result in results)
-        {
-            CGSize offset = CGSizeMake((result.size.width - request.size.width), (result.size.height - request.size.height));
-            
-            // Using euclidian distance to mesure the smaller offset
-            CGFloat distance = sqrtf(offset.width*offset.width + offset.height*offset.height);
-            
-            if (distance < minDist)
-            {
-                minDist = distance;
-                key = result.key;
-                
-                if (minDist == 0.0f)
-                    break;
-            }
-        }
-    }
-
-    if (key != NSNotFound)
-    {
-        UIImage *image = [self _imageForKey:key];
-        
-        [self _updateAccessForImageWithKey:key];
-        
-        [_cacheByRequest setObject:image forKey:request];
-        
-        return image;
-    }
-    
-    return nil;
-}
-
-- (void)executeRequest:(AMImageRequest*)request completion:(void (^)(UIImage *image))completionBlock
+- (void)executeRequest:(AMImageRequest*)request completion:(void (^)(NSArray*))completionBlock
 {
     if (!completionBlock)
         return;
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        UIImage *image = [self executeRequest:request];
+        NSArray *images = [self executeRequest:request];
         dispatch_async(dispatch_get_main_queue(), ^{
-            completionBlock(image);
+            completionBlock(images);
         });
     });
 }
 
-- (void)storeImage:(UIImage*)image forIdentifier:(NSString*)identifier
+- (BOOL)storeImage:(UIImage*)image forIdentifier:(NSString*)identifier options:(NSString*)options
 {
-    [self storeImage:image forIdentifier:identifier isOriginal:NO];
+    return [self _insert:image identifier:identifier options:options];
 }
 
-- (void)storeImage:(UIImage*)image forIdentifier:(NSString*)identifier isOriginal:(BOOL)isOriginal
+- (void)storeImage:(UIImage *)image forIdentifier:(NSString *)identifier options:(NSString *)options completionBlock:(void(^)(BOOL succeed))completionBlock
 {
-    [_dbQueue inTransaction:^(FMDatabase *db, BOOL *rollback) {
-        @try
-        {
-            if(![db executeUpdate:@"INSERT INTO Images (identifier, creationDate, original, width, height, scale) values (?, ?, ?, ?, ?, ?)",
-                 identifier,
-                 @([[NSDate date] timeIntervalSince1970]),
-                 @(isOriginal),
-                 @(image.size.width),
-                 @(image.size.height),
-                 @(image.scale)
-                 ])
-                @throw UpdateException;
-            
-            sqlite_int64 key = db.lastInsertRowId;
-            
-            if (![db executeUpdate:@"INSERT INTO Data (key, data , scale) values (?, ?, ?)",
-                  @(key),
-                  UIImagePNGRepresentation(image),
-                  @(image.scale)
-                  ])
-                @throw UpdateException;
-        }
-        @catch (NSException *exception)
-        {
-            if ([exception.name isEqualToString:AMImageCacheDataBaseException])
-                *rollback = YES;
-            else
-                @throw exception;
-        }
-    }];
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        BOOL succeed = [self _insert:image identifier:identifier options:options];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (completionBlock)
+                completionBlock(succeed);
+        });
+    });
 }
 
-- (void)storeImage:(UIImage*)image forRequest:(AMImageRequest*)request
+
+- (BOOL)executeDelete:(AMImageRequest*)request
 {
-    [_cacheByRequest setObject:image forKey:request];
-    
-    [self storeImage:image forIdentifier:request.identifier isOriginal:request.original];
+    return [self _delete:request];
 }
 
-- (void)cleanCacheUsingAccessDate:(NSTimeInterval)accessDate completion:(void (^)())completionBlock
+- (void)executeDelete:(AMImageRequest*)request completion:(void (^)(BOOL succeed))completionBlock
 {
-    [_dbQueue inTransaction:^(FMDatabase *db, BOOL *rollback) {
-        @try
-        {
-            NSString *query1 = [NSString stringWithFormat:@"DELETE FROM Data WHERE key IN (SELECT Images.key FROM Images WHERE Images.accessDate < %f)", accessDate];
-            NSString *query2 = [NSString stringWithFormat:@"DELETE FROM Images WHERE accessDate < %f", accessDate];
-            
-            if(![db executeUpdate:query1])
-                @throw UpdateException;
-            
-            if (![db executeUpdate:query2])
-                @throw UpdateException;
-        }
-        @catch (NSException *exception)
-        {
-            if ([exception.name isEqualToString:AMImageCacheDataBaseException])
-                *rollback = YES;
-            else
-                @throw exception;
-        }
-    }];
-    
-    if (completionBlock)
-        completionBlock();
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        BOOL succeed = [self executeDelete:request];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (completionBlock)
+                completionBlock(succeed);
+        });
+    });
 }
 
 #pragma mark Private Methods
@@ -251,10 +198,30 @@ NSString * const AMImageCacheDataBaseException = @"AMImageCacheDataBaseException
     [_dbQueue inTransaction:^(FMDatabase *db, BOOL *rollback) {
         @try
         {
-            [db executeUpdate:@"DROP TABLE Images"];
-            [db executeUpdate:@"DROP TABLE Data"];
-            [db executeUpdate:@"CREATE TABLE Images (key INTEGER PRIMARY KEY AUTOINCREMENT, identifier TEXT, creationDate DOUBLE, accessDate DOUBLE, original BOOLEAN, width INTEGER, height INTEGER, scale FLOAT)"];
-            [db executeUpdate:@"CREATE TABLE Data (key INTEGER PRIMARY KEY, data BLOB, scale FLOAT)"];
+            NSString *dropImagesTable = [NSString stringWithFormat:@"DROP TABLE %@", TABLE_IMAGES];
+            NSString *dropDataTable = [NSString stringWithFormat:@"DROP TABLE %@", TABLE_DATA];
+            
+            NSMutableString *createImagesTable = [NSMutableString string];
+            NSMutableString *createDataTable = [NSMutableString string];
+            
+            [createImagesTable appendFormat:@"CREATE TABLE %@ (", TABLE_IMAGES];
+            [createImagesTable appendFormat:@"%@ INTEGER PRIMARY KEY AUTOINCREMENT, ", IMAGES_COLUMN_ID];
+            [createImagesTable appendFormat:@"%@ TEXT, ", IMAGES_COLUMN_KEY];
+            [createImagesTable appendFormat:@"%@ INTEGER, ", IMAGES_COLUMN_CREATION_DATE];
+            [createImagesTable appendFormat:@"%@ INTEGER, ", IMAGES_COLUMN_ACCESS_DATE];
+            [createImagesTable appendFormat:@"%@ TEXT, ", IMAGES_COLUMN_OPTIONS];
+            [createImagesTable appendFormat:@"%@ INTEGER, ", IMAGES_COLUMN_WIDTH];
+            [createImagesTable appendFormat:@"%@ INTEGER)", IMAGES_COLUMN_HEIGHT];
+
+            [createDataTable appendFormat:@"CREATE TABLE %@ (", TABLE_DATA];
+            [createDataTable appendFormat:@"%@ INTEGER PRIMARY KEY, ", DATA_COLUMN_ID];
+            [createDataTable appendFormat:@"%@ BLOB, ", DATA_COLUMN_DATA];
+            [createDataTable appendFormat:@"FOREIGN KEY(%@) REFERENCES %@(%@))", DATA_COLUMN_ID, TABLE_IMAGES, IMAGES_COLUMN_ID];
+            
+            [db executeUpdate:dropDataTable];
+            [db executeUpdate:dropImagesTable];
+            [db executeUpdate:createImagesTable];
+            [db executeUpdate:createDataTable];
         }
         @catch (NSException *exception)
         {
@@ -264,6 +231,132 @@ NSString * const AMImageCacheDataBaseException = @"AMImageCacheDataBaseException
                 @throw exception;
         }
     }];
+}
+
+- (BOOL)_insert:(UIImage*)image identifier:(NSString*)identifier options:(NSString*)options
+{
+    // If no image or no identifier, do nothing.
+    if (image == nil || identifier == nil)
+        return NO;
+    
+    // Flag if the insertion process is successful
+    __block BOOL successful = false;
+    
+    // Getting the data of the image
+    NSData *imageData = UIImagePNGRepresentation(image);
+    
+    // If inavlid image data, return false
+    if (!imageData)
+        return NO;
+    
+    // Perform the insertion
+    [_dbQueue inTransaction:^(FMDatabase *db, BOOL *rollback) {
+        @try
+        {
+            NSMutableString *imagesQuery = [NSMutableString string];
+            
+            [imagesQuery appendFormat:@"INSERT INTO %@ (", TABLE_IMAGES];
+            [imagesQuery appendFormat:@"%@, ", IMAGES_COLUMN_KEY];
+            [imagesQuery appendFormat:@"%@, ", IMAGES_COLUMN_CREATION_DATE];
+            [imagesQuery appendFormat:@"%@, ", IMAGES_COLUMN_ACCESS_DATE];
+            [imagesQuery appendFormat:@"%@, ", IMAGES_COLUMN_OPTIONS];
+            [imagesQuery appendFormat:@"%@, ", IMAGES_COLUMN_WIDTH];
+            [imagesQuery appendFormat:@"%@) ", IMAGES_COLUMN_HEIGHT];
+            [imagesQuery appendFormat:@"VALUES (?, ?, ?, ?, ?, ?)"];
+
+            NSTimeInterval timeStamp = [[NSDate date] timeIntervalSince1970];
+            
+            if(![db executeUpdate:imagesQuery,
+                 identifier,
+                 @((int)timeStamp),
+                 @((int)timeStamp),
+                 options,
+                 @((int)(image.size.width*image.scale)),
+                 @((int)(image.size.height*image.scale))
+                 ])
+                @throw UpdateException;
+            
+            sqlite_int64 dbID = db.lastInsertRowId;
+            
+            NSMutableString *dataQuery = [NSMutableString string];
+            
+            [dataQuery appendFormat:@"INSERT INTO %@ (", TABLE_DATA];
+            [dataQuery appendFormat:@"%@, ", DATA_COLUMN_ID];
+            [dataQuery appendFormat:@"%@) ", DATA_COLUMN_DATA];
+            [dataQuery appendFormat:@"VALUES (?, ?)"];
+            
+            if (![db executeUpdate:dataQuery,
+                  @(dbID),
+                  imageData
+                  ])
+                @throw UpdateException;
+            
+            successful = YES;
+        }
+        @catch (NSException *exception)
+        {
+            if ([exception.name isEqualToString:AMImageCacheDataBaseException])
+                *rollback = YES;
+            else
+                @throw exception;
+        }
+    }];
+    
+    return successful;
+}
+
+- (NSArray*)_select:(AMImageRequest*)request
+{
+    if (request == nil)
+        return nil;
+    
+    NSString *whereStatement = [self _generateWhereStatementFromRequest:request];
+    if (!whereStatement)
+        return nil;
+    
+    NSMutableArray *results = [NSMutableArray array];
+    
+    [_dbQueue inDatabase:^(FMDatabase *db) {
+        
+        NSMutableString *query = [NSMutableString string];
+        
+        [query appendFormat:@"SELECT "];
+        [query appendFormat:@"%@.%@, ", TABLE_IMAGES, IMAGES_COLUMN_ID];
+        [query appendFormat:@"%@.%@, ", TABLE_IMAGES, IMAGES_COLUMN_KEY];
+        [query appendFormat:@"%@.%@, ", TABLE_IMAGES, IMAGES_COLUMN_CREATION_DATE];
+        [query appendFormat:@"%@.%@, ", TABLE_IMAGES, IMAGES_COLUMN_ACCESS_DATE];
+        [query appendFormat:@"%@.%@, ", TABLE_IMAGES, IMAGES_COLUMN_OPTIONS];
+        [query appendFormat:@"%@.%@, ", TABLE_IMAGES, IMAGES_COLUMN_WIDTH];
+        [query appendFormat:@"%@.%@, ", TABLE_IMAGES, IMAGES_COLUMN_HEIGHT];
+        [query appendFormat:@"%@.%@ ", TABLE_DATA, DATA_COLUMN_DATA];
+        [query appendFormat:@"FROM "];
+        [query appendFormat:@"%@ JOIN %@ ON ", TABLE_IMAGES, TABLE_DATA];
+        [query appendFormat:@"%@.%@ = %@.%@ ", TABLE_IMAGES, IMAGES_COLUMN_ID, TABLE_DATA, DATA_COLUMN_ID];
+        [query appendFormat:@"WHERE %@", whereStatement];
+
+        FMResultSet *resultSet = [db executeQuery:query];
+        
+        if ([resultSet next])
+        {
+            AMImageResult *result = [AMImageResult resultWithDbID:[resultSet intForColumnIndex:0]];
+            
+            result.identifier = [resultSet stringForColumnIndex:1];
+            result.creationDate = [resultSet longForColumnIndex:2];
+            result.accessDate = [resultSet longForColumnIndex:3];
+            result.options = [resultSet stringForColumnIndex:4];
+            result.size = CGSizeMake([resultSet intForColumnIndex:5], [resultSet intForColumnIndex:6]);
+            result.data = [resultSet dataForColumnIndex:7];
+            
+            [results addObject:result];
+        }
+        [resultSet close];
+    }];
+    
+    // Mark the access!
+    for (AMImageResult *result in results)
+        [self _updateAccessForImageWithKey:result.dbID];
+    
+    return results;
 }
 
 - (void)_updateAccessForImageWithKey:(NSInteger)key
@@ -274,7 +367,13 @@ NSString * const AMImageCacheDataBaseException = @"AMImageCacheDataBaseException
     [_dbQueue inTransaction:^(FMDatabase *db, BOOL *rollback) {
         @try
         {
-            if (![db executeUpdate:@"UPDATE Images SET accessDate = ? WHERE key = ?", [NSNumber numberWithDouble:[[NSDate date] timeIntervalSince1970]], @(key)])
+            NSMutableString *query = [NSMutableString string];
+            
+            [query appendFormat:@"UPDATE %@ ", TABLE_IMAGES];
+            [query appendFormat:@"SET %@ = ? ", IMAGES_COLUMN_ACCESS_DATE];
+            [query appendFormat:@"WHERE %@ = ?", IMAGES_COLUMN_KEY];
+            
+            if (![db executeUpdate:query, @([[NSDate date] timeIntervalSince1970]), @(key)])
                 @throw UpdateException;
         }
         @catch (NSException *exception)
@@ -287,132 +386,104 @@ NSString * const AMImageCacheDataBaseException = @"AMImageCacheDataBaseException
     }];
 }
 
-- (UIImage*)_imageForKey:(NSInteger)key
+- (BOOL)_delete:(AMImageRequest*)request
 {
-    __block UIImage *image = [_cacheByKey objectForKey:@(key)];
+    if (request == nil)
+        return nil;
     
-    if (image)
-    {
-        return image;
-    }
+    // If no where statement, do nothing
+    NSString *whereStatement = [self _generateWhereStatementFromRequest:request];
+    if (!whereStatement)
+        return nil;
+
+    __block BOOL succeed = NO;
     
-    [_dbQueue inDatabase:^(FMDatabase *db) {
-        FMResultSet *resultSet = [db executeQueryWithFormat:@"SELECT data, scale FROM Data WHERE Data.key = %d", key];
-        
-        if ([resultSet next])
+    [_dbQueue inTransaction:^(FMDatabase *db, BOOL *rollback) {
+        @try
         {
-            NSData *data = [resultSet dataForColumnIndex:0];
-            CGFloat scale = [resultSet doubleForColumnIndex:1];
+            // Getting the images table "WHERE" statement.
+			NSString *imagesWhereStatement = whereStatement;
+			
+			// Creating the data table "WHERE" statement.
+			NSMutableString *dataWhereStatement = [NSMutableString string];
             
-            image = [[UIImage alloc] initWithData:data scale:scale];
+            [dataWhereStatement appendFormat:@"%@ IN (", DATA_COLUMN_ID];
+            [dataWhereStatement appendFormat:@"SELECT %@.%@ ", TABLE_IMAGES, IMAGES_COLUMN_ID];
+            [dataWhereStatement appendFormat:@"FROM %@ ", TABLE_IMAGES];
+            [dataWhereStatement appendFormat:@"WHERE %@)", imagesWhereStatement];
             
-            [resultSet close];
+            // Creating the delete queries
+            NSString *dataQuery = [NSString stringWithFormat:@"DELETE FROM %@ WHERE %@", TABLE_DATA, dataWhereStatement];
+            NSString *imagesQuery = [NSString stringWithFormat:@"DELETE FROM %@ WHERE %@", TABLE_IMAGES, imagesWhereStatement];
+
+            if(![db executeUpdate:dataQuery])
+                @throw UpdateException;
+
+            if (![db executeUpdate:imagesQuery])
+                @throw UpdateException;
+            
+            succeed = YES;
+        }
+        @catch (NSException *exception)
+        {
+            if ([exception.name isEqualToString:AMImageCacheDataBaseException])
+                *rollback = YES;
+            else
+                @throw exception;
         }
     }];
     
-    if (image)
-        [_cacheByKey setObject:image forKey:@(key)];
-        
-    return image;
+    return succeed;
 }
 
-- (NSArray*)_resultsForImageRequest:(AMImageRequest*)request
+- (NSString*)_generateWhereStatementFromRequest:(AMImageRequest*)request
 {
-    NSMutableArray *array = [NSMutableArray array];
+    // First, build the where statement regarding size
+    NSMutableString *sizeWhere = [NSMutableString string];
     
-    [_dbQueue inDatabase:^(FMDatabase *db) {
-        
-        NSString *sqlQuery = [self _sqlQueryFromImageRequest:request];
-        
-        FMResultSet *resultSet = [db executeQuery:sqlQuery];
-        
-        if ([resultSet next])
-        {
-            AMImageResult *result = [AMImageResult new];
-
-            result.key = [resultSet intForColumnIndex:0];
-            result.identifier = [resultSet objectForColumnIndex:1];
-            result.creationDate = [resultSet doubleForColumnIndex:2];
-            result.accessDate = [resultSet doubleForColumnIndex:3];
-            result.original = [[resultSet objectForColumnIndex:4] boolValue];
-            result.size = CGSizeMake([resultSet doubleForColumnIndex:5], [resultSet doubleForColumnIndex:6]);
-            result.scale = [resultSet doubleForColumnIndex:7];
-            
-            [array addObject:result];
-            
-            [resultSet close];
-        }
-    }];
-    
-    return array;
-}
-
-- (NSString*)_sqlQueryFromImageRequest:(AMImageRequest*)imageRequest
-{
-    NSMutableString *query = [NSMutableString string];
-    
-    [query appendString:@"SELECT key, identifier, creationDate, accessDate, original, width, height, scale FROM Images"];    
-    
-    NSMutableString *conditions = [NSMutableString string];
-    
-    if (imageRequest.identifier)
-        [conditions appendFormat:@" identifier = '%@'", imageRequest.identifier];
-    
-    AMImageRequestSizeOptions sizeOption = imageRequest.sizeOption;
-    
-    if (imageRequest.original)
+    switch (request.sizeOptions)
     {
-        [conditions appendFormat:@" AND original = 1"];
+		case AMImageRequestSizeOptionAnySize:
+			break;
+			
+		case AMImageRequestSizeOptionExactSize:
+            [sizeWhere appendFormat:@"%@.%@=%d AND ", TABLE_IMAGES, IMAGES_COLUMN_WIDTH, (int)(request.size.width*request.scale)];
+            [sizeWhere appendFormat:@"%@.%@=%d", TABLE_IMAGES, IMAGES_COLUMN_HEIGHT, (int)(request.size.height*request.scale)];
+			break;
     }
-    else
-    {
-        [conditions appendFormat:@" AND original = 0"];
-        
-        if (sizeOption == AMImageRequestSizeOptionAnySize)
-        {
-            // Nothing to do
-        }
-        else if (sizeOption == AMImageRequestSizeOptionExactSize)
-        {
-            CGSize size = imageRequest.size;
-            [conditions appendFormat:@" AND width = %d AND height = %d", (int)size.width, (int)size.height];
-        }
-        else
-        {
-            CGSize size = imageRequest.size;
-            CGFloat ratio = imageRequest.similarRatio;
-            
-            CGSize offsetSize;
-            
-            if (sizeOption == AMImageRequestSizeOptionInOffsetSize)
-                offsetSize = imageRequest.offsetSize;
-            else if (sizeOption == AMImageRequestSizeOptionSimilarSize)
-                offsetSize = CGSizeMake(size.width*(1.0f - ratio), size.height*(1.0f - ratio));
-            
-            AMImageRequestRestrictionOptions restrictOption = imageRequest.restrictOptions;
-            
-            if (restrictOption == AMImageRequestOptionRestrictDisabled)
-            {
-                [conditions appendFormat:@" AND (width >= %d AND width <= %d)",(int)(size.width - offsetSize.width), (int)(size.width + offsetSize.width)];
-                [conditions appendFormat:@" AND (height >= %d AND height <= %d)", (int)(size.height - offsetSize.height), (int)(size.height + offsetSize.height)];
-            }
-            else if (restrictOption == AMImageRequestOptionRestrictSmaller)
-            {
-                [conditions appendFormat:@" AND (width >= %d AND width <= %d)",(int)(size.width), (int)(size.width + offsetSize.width)];
-                [conditions appendFormat:@" AND (height >= %d AND height <= %d)", (int)(size.height), (int)(size.height + offsetSize.height)];
-            }
-            else if (restrictOption == AMImageRequestOptionRestrictBigger)
-            {
-                [conditions appendFormat:@" AND (width >= %d AND width <= %d)",(int)(size.width - offsetSize.width), (int)(size.width)];
-                [conditions appendFormat:@" AND (height >= %d AND height <= %d)", (int)(size.height - offsetSize.height), (int)(size.height)];
-            }
-        }
-    }
-
-    if (conditions.length > 0)
-        [query appendFormat:@" WHERE%@", conditions];
     
-    return query;
+    // Creating the full where statement depending on the request type.
+    NSMutableString *where = [NSMutableString string];
+    
+    switch (request.type)
+    {
+		case AMImageRequestTypeIdentifier:
+            [where appendFormat:@"%@.%@=\"%@\"",TABLE_IMAGES, IMAGES_COLUMN_KEY, request.identifier];
+			break;
+            
+		case AMImageRequestTypeIdentifierOptions:
+            [where appendFormat:@"%@.%@=\"%@\" AND ",TABLE_IMAGES, IMAGES_COLUMN_KEY, request.identifier];
+            [where appendFormat:@"%@.%@=\"%@\"",TABLE_IMAGES, IMAGES_COLUMN_OPTIONS, request.options];
+			break;
+			
+		case AMImageRequestTypeOlderThanAccessDate:
+            [where appendFormat:@"%@.%@<%d",TABLE_IMAGES, IMAGES_COLUMN_ACCESS_DATE, (int)request.accessDate];
+			break;
+            
+		case AMImageRequestTypeNewerThanAccessDate:
+            [where appendFormat:@"%@.%@>%d",TABLE_IMAGES, IMAGES_COLUMN_ACCESS_DATE, (int)request.accessDate];
+			break;
+			
+		case AMImageRequestTypeUndefined:
+		default:
+			break;
+    }
+    
+    // Concatenate the "WHERE" statement with the size "WHERE" sub-statement, if needed
+    if ((where.length > 0) && (sizeWhere.length > 0))
+        [where appendFormat:@" AND %@", sizeWhere];
+    
+    return where;
 }
 
 @end
