@@ -28,9 +28,9 @@
 
 extern NSString * const AMImageCacheDataBaseException;
 
-@interface AMImageCache : NSObject
+@interface AMImageStore : NSObject
 
-+ (AMImageCache*)cacheAtURL:(NSURL*)url;
++ (AMImageStore*)cacheAtURL:(NSURL*)url;
 - (id)initWithURL:(NSURL *)url;
 @property (nonatomic, strong) NSURL *url;
 

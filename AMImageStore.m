@@ -22,7 +22,7 @@
 // OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 // SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE
 
-#import "AMImageCache.h"
+#import "AMImageStore.h"
 
 #import "FMDatabase.h"
 #import "FMDatabaseAdditions.h"
@@ -72,12 +72,12 @@ static NSString * const IMAGES_COLUMN_HEIGHT = @"height";
 static NSString * const DATA_COLUMN_ID = @"id";
 static NSString * const DATA_COLUMN_DATA = @"data";
 
-@implementation AMImageCache
+@implementation AMImageStore
 {
     FMDatabaseQueue *_dbQueue;
 }
 
-+ (AMImageCache*)cacheAtURL:(NSURL*)url
++ (AMImageStore*)cacheAtURL:(NSURL*)url
 {
     if (!url)
         return nil;
@@ -87,11 +87,11 @@ static NSString * const DATA_COLUMN_DATA = @"data";
     if (!caches)
         caches = [NSMutableDictionary dictionary];
     
-    AMImageCache *cache = [caches objectForKey:url];
+    AMImageStore *cache = [caches objectForKey:url];
     
     if (!cache)
     {
-        cache = [[AMImageCache alloc] initWithURL:url];
+        cache = [[AMImageStore alloc] initWithURL:url];
         [caches setObject:cache forKey:url];
     }
     
