@@ -389,12 +389,12 @@ static NSString * const DATA_COLUMN_DATA = @"data";
 - (BOOL)_delete:(AMImageRequest*)request
 {
     if (request == nil)
-        return nil;
+        return NO;
     
     // If no where statement, do nothing
     NSString *whereStatement = [self _generateWhereStatementFromRequest:request];
     if (!whereStatement)
-        return nil;
+        return NO;
 
     __block BOOL succeed = NO;
     
