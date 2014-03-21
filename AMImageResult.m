@@ -43,7 +43,7 @@
 
 - (NSString*)description
 {
-    return [NSString stringWithFormat:@"%@: [key:%d] [identifier:%@] [creationDate:%f] [accessDate:%f] [options:%@] [size:%@]", [super description], _dbID, _identifier, _creationDate, _accessDate, _options, NSStringFromCGSize(_size)];
+    return [NSString stringWithFormat:@"%@: [key:%ld] [identifier:%@] [creationDate:%f] [accessDate:%f] [options:%@] [size:%@]", [super description], (long)_dbID, _identifier, _creationDate, _accessDate, _options, NSStringFromCGSize(_size)];
 }
 
 @end
