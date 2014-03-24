@@ -73,11 +73,11 @@
 {    
     NSMutableString *string = [NSMutableString string];
     
-    [string appendFormat:@"<%d>",_type];
+    [string appendFormat:@"<%lu>",(unsigned long)_type];
     [string appendFormat:@"<%@>",_identifier];
     [string appendFormat:@"<%@>",_options];
     [string appendFormat:@"<%f>",_accessDate];
-    [string appendFormat:@"<%d>",_sizeOptions];
+    [string appendFormat:@"<%lu>",(unsigned long)_sizeOptions];
     [string appendFormat:@"<%f,%f>",_size.width, _size.height];
     [string appendFormat:@"<%f>",_scale];
     
@@ -107,7 +107,7 @@
 
 - (NSString*)description
 {
-    return [NSString stringWithFormat:@"%@: [type:%d] [identifier:%@] [options:%@] [accessDate:%f] [sizeOptions:%d] [size:%@] [scale:%f]", [super description], _type, _identifier, _options, _accessDate, _sizeOptions, NSStringFromCGSize(_size), _scale];
+    return [NSString stringWithFormat:@"%@: [type:%lu] [identifier:%@] [options:%@] [accessDate:%f] [sizeOptions:%lu] [size:%@] [scale:%f]", [super description], (unsigned long)_type, _identifier, _options, _accessDate, (unsigned long)_sizeOptions, NSStringFromCGSize(_size), _scale];
 }
 
 @end

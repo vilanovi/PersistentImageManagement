@@ -24,20 +24,20 @@
 
 #import <Foundation/Foundation.h>
 
-typedef enum __AMImageRequestSizeOptions
+typedef NS_OPTIONS(NSUInteger, AMImageRequestSizeOptions)
 {
     AMImageRequestSizeOptionAnySize         = 0,
     AMImageRequestSizeOptionExactSize       = 1 << 0,
-} AMImageRequestSizeOptions;
+};
 
-typedef enum  __AMImageRequestType
+typedef NS_ENUM(NSUInteger, AMImageRequestType)
 {
     AMImageRequestTypeUndefined = 0,
     AMImageRequestTypeIdentifier,
     AMImageRequestTypeIdentifierOptions,
     AMImageRequestTypeOlderThanAccessDate,
     AMImageRequestTypeNewerThanAccessDate,
-} AMImageRequestType;
+};
 
 @interface AMImageRequest : NSObject <NSCopying>
 
